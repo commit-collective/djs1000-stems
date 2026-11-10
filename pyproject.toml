@@ -1,0 +1,26 @@
+[build-system]
+requires = ["setuptools>=77"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "djs1000-stems"
+dynamic = ["version"]
+description = "A computer on the network that separates the DJS-1000's samples into stems, for its stems mod."
+readme = "README.md"
+requires-python = ">=3.9"
+license = "MIT OR Apache-2.0"
+license-files = ["LICENSE-MIT", "LICENSE-APACHE"]
+dependencies = ["numpy>=1.21"]
+
+[project.optional-dependencies]
+# Demucs is archived upstream: keep it pinned. PyTorch comes with it, or first from PyTorch's own index for a GPU.
+demucs = ["demucs==4.0.1"]
+
+[project.scripts]
+stemd = "stemd.cli:main"
+
+[tool.setuptools.dynamic]
+version = { attr = "stemd.__version__" }
+
+[tool.setuptools.packages.find]
+include = ["stemd"]
