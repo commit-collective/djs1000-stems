@@ -48,7 +48,7 @@ Pick a word only you know, and start the service with it:
 It says which address to give the unit, and logs each request: the sample's name, its length and format, and how
 long it took. Ctrl+C stops it.
 
-On the unit, in `djs1000-mods.txt` at the root of the USB stick:
+On the unit, in `djs1000-mods/djs1000-mods.txt` on the USB stick (mods v0.3.0 and earlier keep it at the top):
 
 ```
 stems = on
