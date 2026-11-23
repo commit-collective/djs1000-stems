@@ -1,8 +1,8 @@
 # djs1000-stems
 
 `stemd` runs on a computer on the same network as a DJS-1000 and splits its samples into stems for the `stems` mod
-of [djs1000-mods](https://github.com/commit-collective/djs1000-mods). On the unit, SHIFT + push on the track menu sends
-the track's sample. The computer separates it with [Demucs](https://github.com/facebookresearch/demucs) and sends back
+of [djs1000-mods](https://github.com/commit-collective/djs1000-mods). On the unit, STEMS on a sample track's menu
+opens a page whose SPLIT sends the track's sample. The computer separates it with [Demucs](https://github.com/facebookresearch/demucs) and sends back
 2 stems (vocals, instrumental) or 4 (drums, bass, vocals, other). They land next to the sample, in the same format and
 exactly as long, so a pattern or a loop set on the sample fits them too.
 
@@ -58,9 +58,17 @@ stems-count = 4
 ```
 
 `stems-host` is the computer's address on the unit's network (`stemd serve` prints it). Add `:port` if the service
-uses another one than 4790 (`--port`). Then on the track menu, hold SHIFT and push the selector. The line in the menu
-shows SENDING, SEPARATING, then READY. The mods' [settings](https://github.com/commit-collective/djs1000-mods/blob/main/docs/settings.md)
-list the others.
+uses another one than 4790 (`--port`). Then open a sample track's menu, tap STEMS, then SPLIT. The STEMS page shows
+SENDING, then SEPARATING, then a button for each stem. The mods'
+[settings](https://github.com/commit-collective/djs1000-mods/blob/main/docs/settings.md) list the others.
+
+### With the emulator
+
+The [DJS-1000 emulator](https://github.com/commit-collective/djs1000-emulator) runs the app in WSL, and the mod reaches
+the network from there. With `stemd` running on the same Windows computer, `stems-host` in the emulator's settings
+(`~/djs/usb/djs1000-mods/djs1000-mods.txt` in WSL) is Windows's address as WSL sees it: the one `ip route show default`
+gives in WSL. It can change when the computer restarts. The firewall rule above lets it in. With `stemd` installed in
+WSL instead, `stems-host = 127.0.0.1` is enough, with no firewall rule.
 
 ### Start it with Windows
 
