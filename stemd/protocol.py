@@ -19,6 +19,9 @@ The service answers with records, each a letter and what follows it:
     D                   done
 
 The unit takes at most 4 stems and names each file `<sample name> (<stem>).wav`.
+
+A request for 0 stems with no file is a check: the STEMS page asks it when it opens, to say before SPLIT whether the
+computer is there. The answer is D, or E "wrong token".
 """
 import socket
 import struct
@@ -89,6 +92,18 @@ def stem(name, data):
 
 
 DONE = b"D"
+
+
+def check(host, port, token, timeout=5.0):
+    """Asks as the unit's STEMS page does whether the service is there and takes the token. Raises ProtocolError with
+    the service's own words if it refuses, OSError if nothing answers."""
+    with socket.create_connection((host, port), timeout=timeout) as sock:
+        sock.sendall(MAGIC + bytes((VERSION, 0)) + text(token) + text("") + struct.pack(">I", 0))
+        kind = exact(sock, 1)
+        if kind == b"E":
+            raise ProtocolError(text_in(sock))
+        if kind != DONE:
+            raise ProtocolError("an answer that is not understood: %r" % kind)
 
 
 def send_request(host, port, token, name, data, count=2, timeout=30.0, on_progress=None):

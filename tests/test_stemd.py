@@ -133,6 +133,13 @@ class Service(unittest.TestCase):
             sock.sendall(b"HTTP/1.1 GET /\r\n\r\n")
             self.assertEqual(sock.recv(1), b"E")
 
+    def test_a_check_says_whether_the_token_is_taken(self):
+        port = self.start()
+        protocol.check("127.0.0.1", port, "t1")
+        with self.assertRaisesRegex(protocol.ProtocolError, "wrong token"):
+            protocol.check("127.0.0.1", port, "nope")
+        protocol.check("127.0.0.1", self.start(token=None), "anything")
+
     def test_no_token_takes_any(self):
         port = self.start(token=None)
         self.assertEqual(len(self.send(port, wav.write(tone(seconds=0.1), wav.Format(44100, 2, 16)), token="")), 2)
@@ -211,6 +218,9 @@ class SameAsTheMods(unittest.TestCase):
         self.assertEqual([n for n, _ in stems], list(protocol.NAMES[4]))
         with self.assertRaisesRegex(protocol.ProtocolError, "wrong token"):
             protocol.send_request("127.0.0.1", port, "t2", "Kick", data, 2, timeout=5)
+        protocol.check("127.0.0.1", port, "t1")
+        with self.assertRaisesRegex(protocol.ProtocolError, "wrong token"):
+            protocol.check("127.0.0.1", port, "t2")
 
 
 @unittest.skipUnless(os.environ.get("STEMD_TEST_DEMUCS"), "STEMD_TEST_DEMUCS=1 runs Demucs")

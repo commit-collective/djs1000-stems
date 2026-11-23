@@ -46,6 +46,11 @@ class Service:
         except (protocol.ProtocolError, ConnectionError, OSError) as e:
             log("%s: not a request (%s)" % (who, e))
             return self.reply(sock, protocol.error("not understood"))
+        if request.version == protocol.VERSION and request.count == 0 and not request.data:
+            if not self.allowed(request.token):
+                log("%s: a check, wrong token" % who)
+                return self.reply(sock, protocol.error("wrong token"))
+            return self.reply(sock, protocol.DONE)
         label = "%s: %r, %d stems" % (who, request.name[:80], request.count)
         if request.version != protocol.VERSION or request.count not in protocol.NAMES:
             log("%s: refused, version %d" % (label, request.version))
