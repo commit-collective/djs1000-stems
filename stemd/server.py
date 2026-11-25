@@ -2,9 +2,11 @@
 """The service: takes the unit's requests over TCP, separates one sample at a time, sends the stems back.
 
 While a sample waits or is separated, a progress record goes out every few seconds: the unit gives up after 20 s
-without one. One request at a time is separated (a GPU has room for one), the others wait their turn.
+without one. While it is separated, the record says how far it is ("separating, 42%, 12 s") each time that changes,
+at most once a second. One request at a time is separated (a GPU has room for one), the others wait their turn.
 """
 import hmac
+import inspect
 import socketserver
 import threading
 import time
@@ -12,6 +14,7 @@ import time
 from . import protocol, wav
 
 KEEPALIVE = 5.0             # seconds between progress records while working
+STEP = 1.0                  # the least time between records that say a new percentage
 READ_TIMEOUT = 30.0         # the longest the unit may pause while it sends its request
 
 
@@ -88,7 +91,14 @@ class Service:
     def separate(self, sock, samples, fmt, count):
         """The stems, with progress records sent every few seconds while it waits its turn and while it works."""
         result, failure = {}, []
-        state = {"step": "waiting for another sample to be done"}
+        state = {"step": "waiting for another sample to be done", "done": None}
+        try:
+            told = "on_progress" in inspect.signature(self.separator).parameters
+        except (TypeError, ValueError):
+            told = False
+
+        def progressed(part):
+            state["done"] = part
 
         def work():
             try:
@@ -96,20 +106,35 @@ class Service:
                     state["step"] = "separating"
                     state["since"] = time.monotonic()
                     self.separator.load()
-                    result.update(self.separator(samples, fmt.rate, count))
+                    if told:
+                        result.update(self.separator(samples, fmt.rate, count, on_progress=progressed))
+                    else:
+                        result.update(self.separator(samples, fmt.rate, count))
             except BaseException as e:
                 failure.append(e)
         worker = threading.Thread(target=work, daemon=True)
         sock.sendall(protocol.progress("separating"))
         worker.start()
+        sent_at, sent_percent = time.monotonic(), None
         while True:
-            worker.join(KEEPALIVE)
+            worker.join(min(STEP, KEEPALIVE))
             if not worker.is_alive():
                 break
-            if state["step"] == "separating":
-                sock.sendall(protocol.progress("separating, %d s" % (time.monotonic() - state["since"])))
+            now = time.monotonic()
+            percent = None if state["done"] is None else int(100 * state["done"])
+            if state["step"] == "separating" and percent is not None and percent != sent_percent and now - sent_at >= STEP:
+                message = "separating, %d%%, %d s" % (percent, now - state["since"])
+            elif now - sent_at >= KEEPALIVE:
+                if state["step"] != "separating":
+                    message = state["step"]
+                elif percent is None:
+                    message = "separating, %d s" % (now - state["since"])
+                else:
+                    message = "separating, %d%%, %d s" % (percent, now - state["since"])
             else:
-                sock.sendall(protocol.progress(state["step"]))
+                continue
+            sock.sendall(protocol.progress(message))
+            sent_at, sent_percent = now, percent
         if failure:
             raise failure[0]
         return result

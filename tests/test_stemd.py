@@ -85,6 +85,15 @@ class Slow:
         return Fake()(samples, rate, count)
 
 
+class Counting(Slow):
+    """A separator that says how far it is, in four steps."""
+    def __call__(self, samples, rate, count, on_progress=None):
+        for i in range(4):
+            time.sleep(self.seconds / 4)
+            on_progress(i / 4)
+        return Fake()(samples, rate, count)
+
+
 class Broken(Slow):
     def __call__(self, samples, rate, count):
         raise RuntimeError("out of memory")
@@ -164,6 +173,17 @@ class Service(unittest.TestCase):
         self.assertTrue(any(m.startswith("separating, ") for m in heard[1]), heard[1])
         self.assertIn("waiting for another sample to be done", heard[2])
 
+    def test_progress_says_how_far_the_separation_is(self):
+        self.addCleanup(setattr, server, "STEP", server.STEP)
+        server.STEP = 0.05
+        port = self.start(Counting(1.0))
+        heard = []
+        self.assertEqual(len(self.send(port, wav.write(tone(seconds=0.1), wav.Format(44100, 2, 16)),
+                                       progress=heard.append)), 2)
+        percents = [m.split(", ")[1] for m in heard if m.startswith("separating, ") and "%" in m]
+        self.assertGreaterEqual(len(percents), 2, heard)
+        self.assertIn("50%", percents, heard)
+
     def test_a_separator_that_fails_says_so(self):
         port = self.start(Broken(0))
         with self.assertRaisesRegex(protocol.ProtocolError, "separation failed: out of memory"):
@@ -237,6 +257,16 @@ class RealModel(unittest.TestCase):
                     self.assertTrue(all(s.shape == samples.shape for s in stems.values()))
                     total = sum(stems.values())
                     self.assertLess(float(np.sqrt(((total - samples) ** 2).mean())), 0.05)
+
+    def test_demucs_says_how_far_it_is(self):
+        from stemd.separate import Demucs
+        samples = tone(44100, 20.0, 2)
+        parts = []
+        Demucs()(samples, 44100, 2, on_progress=parts.append)
+        self.assertGreaterEqual(len(parts), 3, parts)
+        self.assertEqual(parts, sorted(parts))
+        self.assertGreater(parts[-1], 0.6, parts)
+        self.assertLessEqual(parts[-1], 0.99, parts)
 
 
 if __name__ == "__main__":

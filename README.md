@@ -59,7 +59,7 @@ stems-count = 4
 
 `stems-host` is the computer's address on the unit's network (`stemd serve` prints it). Add `:port` if the service
 uses another one than 4790 (`--port`). Then open a sample track's menu, tap STEMS, then SPLIT. The STEMS page shows
-SENDING, then SEPARATING, then a button for each stem. The mods'
+SENDING, then SEPARATING with how far it is (SEPARATING TRACK 5: 42%), then a button for each stem. The mods'
 [settings](https://github.com/commit-collective/djs1000-mods/blob/main/docs/settings.md) list the others.
 
 ### With the emulator
@@ -143,7 +143,8 @@ people on a shared network from using your computer's GPU, nothing more. Run the
 ## How it talks to the unit
 
 One TCP connection per sample, on port 4790: the unit sends the WAV, the service answers with progress messages
-(at least every 5 seconds, as the unit gives up after 20 seconds of silence), then each stem, then a done mark. The
+(at least every 5 seconds, as the unit gives up after 20 seconds of silence, and with the percentage done each time it
+changes, at most once a second), then each stem, then a done mark. The
 exchange is described at the top of [stemd/protocol.py](stemd/protocol.py). The mods' tests use a stand-in that
 speaks it too, and this repository's tests check that the two agree.
 

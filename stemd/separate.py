@@ -1,6 +1,7 @@
 # SPDX-License-Identifier: MIT OR Apache-2.0
 """Separating a sample into stems. A separator takes samples (frames, channels) at a rate and gives back each stem's
-samples with the same shape: {name: samples}, in protocol.NAMES order.
+samples with the same shape: {name: samples}, in protocol.NAMES order. A separator may be given on_progress, called
+with the part done so far (0 to 1) while it works.
 
 `Fake` uses no model: its stems are bands of the sample (one-pole filters) that add up to it, for trying the unit
 and the network without a GPU. `Demucs` runs Meta's Demucs (pinned to 4.0.1 in pyproject.toml): 4 stems from the
@@ -29,7 +30,7 @@ class Fake:
     def load(self):
         pass
 
-    def __call__(self, samples, rate, count):
+    def __call__(self, samples, rate, count, on_progress=None):
         low = one_pole(samples, 0.02)
         if count == 2:
             return {"vocals": samples - low, "instrumental": low}
@@ -82,7 +83,7 @@ class Demucs:
             model.eval()
             self.model = model.to(self.device)
 
-    def __call__(self, samples, rate, count):
+    def __call__(self, samples, rate, count, on_progress=None):
         import torch
         from demucs.apply import apply_model
         import julius
@@ -98,9 +99,29 @@ class Demucs:
             wav = julius.resample_frac(wav, rate, model.samplerate)
         ref = wav.mean(0)
         mean, std = ref.mean(), ref.std() + 1e-8            # as Demucs's own command does: a silent sample stays silent
-        with torch.no_grad():
-            out = apply_model(model, ((wav - mean) / std)[None], device=self.device, shifts=self.shifts, split=True,
-                              overlap=0.25, progress=False)[0]
+        hooks = []
+        if on_progress:
+            # Demucs 4.0.1 has no progress callback: each piece of the sample is one call of a model, so the calls
+            # are counted against the number apply_model will make (its pieces, for each shift and each model).
+            parts = getattr(model, "models", None) or [model]
+            length = wav.shape[-1] + (int(0.5 * model.samplerate) if self.shifts else 0)
+            total = 0
+            for part in parts:
+                stride = int(0.75 * int(model.samplerate * float(part.segment)))
+                total += max(1, self.shifts) * max(1, -(-length // max(1, stride)))
+            calls = [0]
+
+            def counted(module, args):
+                calls[0] += 1
+                on_progress(min(0.99, calls[0] / total))
+            hooks = [part.register_forward_pre_hook(counted) for part in parts]
+        try:
+            with torch.no_grad():
+                out = apply_model(model, ((wav - mean) / std)[None], device=self.device, shifts=self.shifts,
+                                  split=True, overlap=0.25, progress=False)[0]
+        finally:
+            for hook in hooks:
+                hook.remove()
         out = out * std + mean
         if rate != model.samplerate:
             out = julius.resample_frac(out, model.samplerate, rate)

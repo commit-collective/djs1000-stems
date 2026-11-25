@@ -13,7 +13,8 @@ The unit sends:
 
 The service answers with records, each a letter and what follows it:
 
-    P text              progress. The unit gives up after 20 s with nothing, so one comes at least every few seconds
+    P text              progress. The unit gives up after 20 s with nothing, so one comes at least every few seconds.
+                        A number just before a "%" ("separating, 42%, 12 s") is how far it is: the unit shows it
     S text length data  a stem: its name (at most 24 letters, digits, spaces or dashes), then its WAV file
     E text              refused or failed: the unit removes what it wrote and shows REFUSED BY COMPUTER
     D                   done
