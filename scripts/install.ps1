@@ -86,6 +86,6 @@ if ($LASTEXITCODE -ne 0) { throw "stemd check failed: see above" }
 
 Say "done. Next:"
 Write-Host "  1. Let the unit in, once, in an administrator PowerShell:"
-Write-Host "       New-NetFirewallRule -DisplayName stemd -Direction Inbound -Protocol TCP -LocalPort 4790 -Action Allow -Profile Private,Public"
+Write-Host "       New-NetFirewallRule -DisplayName stemd -Direction Inbound -Protocol TCP -LocalPort 4790 -Action Allow -Profile Private,Public -RemoteAddress LocalSubnet"
 Write-Host "  2. Start it with a word of your own, the same as stems-token on the unit:"
 Write-Host "       $Venv\Scripts\stemd serve --token YOURWORD"
