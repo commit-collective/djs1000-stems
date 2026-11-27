@@ -170,6 +170,19 @@ class Service(unittest.TestCase):
         time.sleep(0.3)
         self.assertEqual(len(self.send(port, data)), 2)
 
+    def test_a_sample_waiting_for_the_model_keeps_its_place(self):
+        self.addCleanup(setattr, server, "UPLOADS", server.UPLOADS)
+        server.UPLOADS = 1
+        port = self.start(Slow(1.0))
+        data = wav.write(tone(seconds=0.1), wav.Format(44100, 2, 16))
+        first = threading.Thread(target=self.send, args=(port, data))
+        first.start()
+        time.sleep(0.3)                 # sent, and being separated
+        with self.assertRaisesRegex(protocol.ProtocolError, "busy"):
+            self.send(port, data)
+        first.join()
+        self.assertEqual(len(self.send(port, data)), 2)
+
     def test_send_writes_only_the_stems_it_asked_for(self):
         out = ROOT / "build" / "send-out"
         source = ROOT / "build" / "Loop.wav"

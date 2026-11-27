@@ -16,7 +16,7 @@ from . import protocol, wav
 KEEPALIVE = 5.0             # seconds between progress records while working
 STEP = 1.0                  # the least time between records that say a new percentage
 READ_TIMEOUT = 30.0         # the longest the unit may pause while it sends its request
-UPLOADS = 4                 # requests whose files are read at once: more are refused before their file is taken
+UPLOADS = 4                 # requests taken at once, from their file to their answer: more are refused before their file
 
 
 LOG_FILE = None             # also written there when set (--log), for a service that runs without a window
@@ -71,15 +71,20 @@ class Service:
             log("%s: refused, wrong token" % label)
             return self.refuse(sock, request, "wrong token")
         if not self.uploads.acquire(blocking=False):
-            log("%s: refused, too many samples are being sent" % label)
+            log("%s: refused, too many samples are in" % label)
             return self.refuse(sock, request, "busy, try again")
+        try:                            # its place is held until it is answered: no more samples than that in memory
+            self.take(sock, request, label, began)
+        finally:
+            self.uploads.release()
+
+    def take(self, sock, request, label, began):
+        """A request that may come in: its file read, separated, and its stems sent."""
         try:
             request.data = protocol.exact(sock, request.size)
         except (ConnectionError, OSError) as e:
             log("%s: the unit hung up while it sent its sample (%s)" % (label, e))
             return
-        finally:
-            self.uploads.release()
         try:
             samples, fmt = wav.read(request.data)
         except wav.WavError as e:
