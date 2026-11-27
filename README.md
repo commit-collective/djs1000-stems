@@ -1,166 +1,144 @@
 # djs1000-stems
 
-`stemd` runs on a computer on the same network as a DJS-1000 and splits its samples into stems for the `stems` mod
-of [djs1000-mods](https://github.com/commit-collective/djs1000-mods). On the unit, STEMS on a sample track's menu
-opens a page whose SPLIT sends the track's sample. The computer separates it with [Demucs](https://github.com/facebookresearch/demucs) and sends back
-2 stems (vocals, instrumental) or 4 (drums, bass, vocals, other). They land next to the sample, in the same format and
-exactly as long, so a pattern or a loop set on the sample fits them too.
+`stemd` is the companion service for the [DJS-1000 Stems mod](https://commitcollective.cc/djs1000/mods/).
+Tap **STEMS → SPLIT** on a sample track to send its audio to a computer running `stemd`.
+[Demucs](https://github.com/facebookresearch/demucs) separates it into vocals and instrumental,
+or drums, bass, vocals and other. The stems are saved beside the original sample. They match its
+format and length so the same loops and patterns still fit.
 
-The `stems` mod is in beta from mods v0.6.0, off until it is turned on. Separate only samples
-you have the right to use.
+## What you need
 
-## What it needs
+- [DJS-1000 Mods v0.6.0 or later](https://commitcollective.cc/djs1000/mods/), with **Stems** enabled.
+  The mod is in beta and off by default.
+- A computer that can reach the DJS-1000 over the local network. Connect the DJS by Ethernet.
+  The computer can use Ethernet or Wi-Fi on the same network.
+- [Python](https://www.python.org/downloads/) 3.11 or later for the setup below. Python 3.12 is a good
+  choice for a new installation. A GPU is optional. CPU separation works too and takes longer.
 
-- A computer on the unit's network: a cable to the same switch or router as the DJS-1000, which has only Ethernet. The
-  computer itself may be on Wi-Fi of that router.
-- Windows 10 or 11 for the install script. Linux and macOS work with the [manual steps](#without-the-script).
-- [Python](https://www.python.org/downloads/) 3.10 or later. On Windows, tick "Add python.exe to PATH" when installing it.
-- An NVIDIA GPU is optional. Without one, the processor does it, slower: on a recent desktop processor a 60 second
-  sample took about 20 seconds, and a mid-range NVIDIA GPU about 5. An older processor can take a minute or more.
-- About 3 GB of disk with a GPU (PyTorch for CUDA), under 1 GB without.
+The service has been tested on Windows with CPU and NVIDIA CUDA. The manual setup below also
+covers Linux and macOS, where end-to-end testing is still pending.
 
-## Install on Windows
+## 1. Install and start the service
 
-1. Get this repository on the computer: `git clone`, or download it as a ZIP and unpack it.
-2. In that folder, run:
-   ```powershell
-   powershell -ExecutionPolicy Bypass -File scripts\install.ps1
-   ```
-   It makes a Python environment in `.venv`, installs PyTorch for the computer's NVIDIA GPU if it has one (else for
-   the processor), Demucs and `stemd`, then downloads the model (80 MB, once) and checks that it loads. Nothing
-   outside the folder changes, apart from pip's and PyTorch's caches in your user folder. `-Torch cpu` installs for the
-   processor even with a GPU. Run it again to update.
-3. Let the unit reach the computer, once, in a PowerShell opened as administrator:
-   ```powershell
-   New-NetFirewallRule -DisplayName stemd -Direction Inbound -Protocol TCP -LocalPort 4790 -Action Allow -Profile Private,Public -RemoteAddress LocalSubnet
-   ```
-   A cable straight to the unit, or a network with no internet, is often an "unidentified network", which Windows
-   counts as public: that is why the rule covers both. `LocalSubnet` lets in only the computers of the networks this
-   one is on, the unit's included.
+Download the Source code ZIP from the [latest release](https://github.com/commit-collective/djs1000-stems/releases/latest)
+or clone the repository. Open a terminal in the extracted folder.
 
-## Run it
+**Linux or macOS**
 
-Pick a word only you know, and start the service with it:
+```sh
+python3 -m venv .venv
+.venv/bin/python -m pip install ".[demucs]"
+.venv/bin/stemd check --download
+.venv/bin/stemd serve --token YOURWORD
+```
+
+**Windows PowerShell**
 
 ```powershell
-.venv\Scripts\stemd serve --token YOURWORD
+python -m venv .venv
+.\.venv\Scripts\python.exe -m pip install ".[demucs]"
+.\.venv\Scripts\stemd.exe check --download
+.\.venv\Scripts\stemd.exe serve --token YOURWORD
 ```
 
-It says which address to give the unit, and logs each request: the sample's name, its length and format, and how
-long it took. Ctrl+C stops it.
+Choose your own token and use it again in the DJS settings. The check downloads the model weights
+on first run. For a specific CPU or GPU build, use the [PyTorch install selector](https://pytorch.org/get-started/locally/)
+and install its recommended `torch` and matching `torchaudio` into the same environment before
+installing `.[demucs]`.
 
-On the unit, in `djs1000-mods/djs1000-mods.txt` on the USB stick (mods v0.3.0 and earlier keep it at the top):
+Use the computer's IPv4 address on the DJS network. The service lists local addresses at startup.
+If the computer has several network connections, use `--bind ADDRESS` to listen only on the DJS
+network's address. If a firewall blocks the connection, allow inbound TCP 4790 from the DJS or
+its subnet. Run the service on a network you trust. Press Ctrl+C to stop it.
 
+<details>
+<summary>Windows installer, firewall and startup</summary>
+
+The optional installer creates `.venv`, selects a CPU or NVIDIA PyTorch build and downloads the model.
+Run it from the repository folder. Add `-Torch cpu` to force the CPU build.
+
+```powershell
+powershell -ExecutionPolicy Bypass -File scripts\install.ps1
 ```
+
+If Windows Firewall blocks the DJS, run this once in an administrator PowerShell. The Public
+profile covers direct Ethernet connections that Windows classifies as unidentified.
+
+```powershell
+New-NetFirewallRule -DisplayName stemd -Direction Inbound -Protocol TCP -LocalPort 4790 -Action Allow -Profile Private,Public -RemoteAddress LocalSubnet
+```
+
+To start the service at login, run the following from the repository folder. The shortcut starts
+the service minimized and writes a log to `stemd.log`. Delete the shortcut from `shell:startup`
+to remove it.
+
+```powershell
+setx STEMD_TOKEN YOURWORD
+$link = (New-Object -ComObject WScript.Shell).CreateShortcut("$env:APPDATA\Microsoft\Windows\Start Menu\Programs\Startup\stemd.lnk")
+$link.TargetPath = "$PWD\scripts\serve.cmd"
+$link.WindowStyle = 7
+$link.Save()
+```
+
+</details>
+
+## 2. Connect the DJS-1000
+
+On the USB stick, edit `djs1000-mods/djs1000-mods.txt` and add or update these lines.
+
+```ini
 stems = on
 stems-host = 192.168.1.20
 stems-token = YOURWORD
 stems-count = 4
 ```
 
-`stems-host` is the computer's address on the unit's network (`stemd serve` prints it). Add `:port` if the service
-uses another one than 4790 (`--port`). Then open a sample track's menu, tap STEMS, then SPLIT. The STEMS page shows
-SENDING, then SEPARATING with how far it is (SEPARATING TRACK 5: 42%), then a button for each stem. The mods'
-[settings](https://github.com/commit-collective/djs1000-mods/blob/main/docs/settings.md) list the others.
+Replace the example address and token. Use `stems-count = 2` for vocals and instrumental.
+If you started the service with a custom `--port`, append it to the address in `stems-host`.
+Restart the DJS if you just enabled the mod. Open a sample track's menu, then select **STEMS → SPLIT**.
+The page shows progress and displays the stems when they arrive.
 
 ### With the emulator
 
-The [DJS-1000 emulator](https://github.com/commit-collective/djs1000-emulator) runs the app in WSL, and the mod reaches
-the network from there. With `stemd` running on the same Windows computer, `stems-host` in the emulator's settings
-(`~/djs/usb/djs1000-mods/djs1000-mods.txt` in WSL) is Windows's address as WSL sees it: the one `ip route show default`
-gives in WSL. It can change when the computer restarts. The firewall rule above lets it in. With `stemd` installed in
-WSL instead, `stems-host = 127.0.0.1` is enough, with no firewall rule.
+Use `127.0.0.1` for `stems-host` when the service and emulator backend run in the same Linux
+environment. If the backend runs in WSL or a Linux VM and the service runs on the host, use a
+host address reachable from the guest. See the [DJS-1000 emulator setup guide](https://github.com/commit-collective/djs1000-emulator/blob/main/docs/running.md)
+for platform and network details.
 
-### Start it with Windows
+## Check the connection
 
-Keep the word in your user's environment once, then put `scripts\serve.cmd` in the Startup folder. In PowerShell,
-in this folder:
-
-```powershell
-setx STEMD_TOKEN YOURWORD
-$link = (New-Object -ComObject WScript.Shell).CreateShortcut("$env:APPDATA\Microsoft\Windows\Start Menu\Programs\Startup\stemd.lnk")
-$link.TargetPath = "$PWD\scripts\serve.cmd"; $link.WindowStyle = 7; $link.Save()
-```
-
-At each login the service starts in a minimized window, and also writes its log to `stemd.log` in this folder.
-Deleting `stemd.lnk` from the Startup folder (Win+R, `shell:startup`) undoes it. `scripts\serve.cmd` also starts it
-by hand, with the same log.
-
-## Check it without the unit
-
-From any computer with this repository installed (even with `--fake` only), send a WAV as the unit does:
-
-```powershell
-.venv\Scripts\stemd send 192.168.1.20 "C:\Samples\Loop.wav" --token YOURWORD --count 4
-```
-
-The stems are written next to the file, in `Loop (stems)`. `stemd separate FILE.wav --count 4` makes them on this
-computer without the network, and `stemd check` says what it runs on (PyTorch, the GPU).
-
-`stemd serve --fake --token YOURWORD` answers with simple filtered copies of the sample, with no model: it tries the
-unit and the network on a computer without PyTorch.
-
-## When it does not work
-
-| On the unit | What to look at |
-|---|---|
-| NO COMPUTER ANSWERS | Is `stemd serve` running? Is `stems-host` its address on the unit's network? Is the firewall rule there? From another computer on that network, `stemd send` tells the same. |
-| REFUSED BY COMPUTER | The service's log says why: most often `wrong token` (`stems-token` is not the word given to `--token`). |
-| CONNECTION LOST | The computer went away mid-request. The service's log says if it failed. |
-
-A GPU that is not used: `stemd check` says whether PyTorch sees it. An old NVIDIA driver can be too old for PyTorch's
-CUDA build: update the driver, or install with `-Torch cpu`. An RTX 50 card needs `-Torch cu130`, which the script
-picks by itself.
-
-## Without the script
-
-On Linux or macOS, or to choose each part:
+From the same computer, send a WAV to the running service. In the examples below, use the same `stemd` executable as in the install step.
 
 ```sh
-python3 -m venv .venv
-.venv/bin/pip install torch torchaudio        # or the command pytorch.org gives for your GPU
-.venv/bin/pip install -e ".[demucs]"
-.venv/bin/stemd check --download
-.venv/bin/stemd serve --token YOURWORD
+stemd send 127.0.0.1 "Loop.wav" --token YOURWORD --count 4
 ```
 
-On Linux, open TCP 4790 in the firewall if it has one.
+Use the service computer's address if testing from another machine or if the service is bound to
+a specific address. The results go into `Loop (stems)` beside the file.
+`stemd separate "Loop.wav" --count 4` splits the file locally without a server.
 
-## Options
+| On the DJS | What to check |
+| --- | --- |
+| NO COMPUTER ANSWERS | Check the service is running, the address is reachable and the firewall allows the connection. |
+| REFUSED BY COMPUTER | Check the service log for the reason. A wrong token means the two settings differ. |
+| CONNECTION LOST | Check the network connection and the service log for an interrupted split. |
 
-`stemd serve --help` lists them. Those worth knowing:
-
-- `--model htdemucs_ft`: Demucs's fine-tuned model, a little better and about four times slower.
-- `--shifts 2`: two passes averaged, a little better, twice as slow.
-- `--device cpu`: the processor even with a GPU.
-- `--max-seconds`: longer samples are refused (64 by default, as on the unit).
-- `--bind ADDRESS`: listen only on that address of the computer.
-
-## Security
-
-The token is a shared word, kept in plain text in the unit's settings file and on this computer. It keeps other
-people on a shared network from using your computer's GPU, nothing more. A request with a wrong token, or a file
-longer than `--max-seconds` allows, is refused before its sample is kept, and at most four samples are taken in at
-once. Run the service on networks you trust, and with `--bind` on the address of the unit's network when the computer
-has others.
-
-## How it talks to the unit
-
-One TCP connection per sample, on port 4790: the unit sends the WAV, the service answers with progress messages
-(at least every 5 seconds, as the unit gives up after 20 seconds of silence, and with the percentage done each time it
-changes, at most once a second), then each stem, then a done mark. The
-exchange is described at the top of [stemd/protocol.py](stemd/protocol.py). The mods' tests use a stand-in that
-speaks it too, and this repository's tests check that the two agree.
+Run `stemd check` to see which device is selected. If the GPU setup fails, try `stemd serve --device cpu --token YOURWORD`.
+See `stemd serve --help` for model, network and sample-length options.
 
 ## Developing
 
+Install with `python -m pip install .` to run the tests or use `stemd serve --fake --token YOURWORD` without PyTorch.
+The fake separator supplies filtered copies for testing the connection. The [protocol](stemd/protocol.py)
+describes the exchange with the mod.
+
 ```sh
 python -m unittest discover -s tests -v
-STEMD_TEST_DEMUCS=1 python -m unittest discover -s tests -v     # with Demucs installed: a real separation too
 ```
+
+Set `STEMD_TEST_DEMUCS=1` to also run the separation tests when Demucs is installed.
 
 ## Licences
 
-stemd is under the MIT licence or the Apache 2.0 licence, at your choice ([LICENSE-MIT](LICENSE-MIT),
-[LICENSE-APACHE](LICENSE-APACHE)). Demucs is Meta's, under the MIT licence: it is installed from PyPI and pinned to
-4.0.1, as the project is archived. Its model's weights are downloaded from Meta's servers the first time.
+Choose the [MIT licence](LICENSE-MIT) or the [Apache 2.0 licence](LICENSE-APACHE).
+Demucs is an MIT-licensed dependency pinned to 4.0.1. Its model weights are downloaded separately.
