@@ -20,7 +20,7 @@ import numpy as np
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT))
 
-from stemd import protocol, server, wav  # noqa: E402
+from stemd import cli, protocol, server, wav  # noqa: E402
 from stemd.separate import Fake  # noqa: E402
 
 
@@ -141,6 +141,47 @@ class Service(unittest.TestCase):
         with socket.create_connection(("127.0.0.1", port), timeout=5) as sock:
             sock.sendall(b"HTTP/1.1 GET /\r\n\r\n")
             self.assertEqual(sock.recv(1), b"E")
+
+    def test_a_request_is_refused_before_its_file_is_taken(self):
+        port = self.start(max_seconds=1.0)
+        # a file larger than the service takes: refused on its head, with nothing of the file sent
+        with socket.create_connection(("127.0.0.1", port), timeout=5) as sock:
+            sock.sendall(protocol.MAGIC + bytes((1, 2)) + protocol.text("t1") + protocol.text("x")
+                         + struct.pack(">I", 200 * 1024 * 1024))
+            self.assertEqual(sock.recv(1), b"E")
+            self.assertIn("over 1 seconds", protocol.text_in(sock))
+        # a wrong token: the file is read and thrown away, then the answer comes
+        data = wav.write(tone(seconds=0.2), wav.Format(44100, 2, 16))
+        with self.assertRaisesRegex(protocol.ProtocolError, "wrong token"):
+            self.send(port, data, token="nope")
+        self.assertEqual(len(self.send(port, data)), 2)
+
+    def test_uploads_past_the_limit_are_refused(self):
+        self.addCleanup(setattr, server, "UPLOADS", server.UPLOADS)
+        server.UPLOADS = 1
+        port = self.start()
+        data = wav.write(tone(seconds=0.1), wav.Format(44100, 2, 16))
+        with socket.create_connection(("127.0.0.1", port), timeout=5) as held:
+            held.sendall(protocol.MAGIC + bytes((1, 2)) + protocol.text("t1") + protocol.text("x")
+                         + struct.pack(">I", len(data)) + data[:10])     # its file still coming
+            time.sleep(0.3)
+            with self.assertRaisesRegex(protocol.ProtocolError, "busy"):
+                self.send(port, data)
+        time.sleep(0.3)
+        self.assertEqual(len(self.send(port, data)), 2)
+
+    def test_send_writes_only_the_stems_it_asked_for(self):
+        out = ROOT / "build" / "send-out"
+        source = ROOT / "build" / "Loop.wav"
+        source.parent.mkdir(exist_ok=True)
+        source.write_bytes(wav.write(tone(seconds=0.1), wav.Format(44100, 2, 16)))
+        answers = [("../../evil", b"x"), ("instrumental", b"y")]
+        real = protocol.send_request
+        self.addCleanup(setattr, protocol, "send_request", real)
+        protocol.send_request = lambda *a, **k: answers
+        with self.assertRaises(SystemExit):
+            cli.main(["send", "127.0.0.1", str(source), "--token", "t1", "--count", "2", "--out", str(out)])
+        self.assertFalse(out.exists())
 
     def test_a_check_says_whether_the_token_is_taken(self):
         port = self.start()

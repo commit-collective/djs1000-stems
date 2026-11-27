@@ -130,6 +130,9 @@ def send(args):
         sys.exit("refused: %s" % e)
     except (OSError, ConnectionError) as e:
         sys.exit("failed: %s" % e)
+    asked = protocol.NAMES[args.count]
+    if sorted(stem for stem, _ in stems) != sorted(asked):
+        sys.exit("refused: the computer sent %s, not %s" % (", ".join(repr(s) for s, _ in stems), ", ".join(asked)))
     folder = args.out or os.path.splitext(args.file)[0] + " (stems)"
     os.makedirs(folder, exist_ok=True)
     for stem, data in stems:

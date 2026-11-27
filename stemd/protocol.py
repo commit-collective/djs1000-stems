@@ -66,8 +66,9 @@ class Request:
         self.version, self.count, self.token, self.name, self.data = version, count, token, name, data
 
 
-def read_request(sock, max_file=MAX_FILE):
-    """The unit's request. ProtocolError if it is not one."""
+def read_head(sock):
+    """The unit's request up to its file, which is still to be read: a Request with `size` and no data yet.
+    ProtocolError if it is not one."""
     head = exact(sock, 6)
     if head[:4] != MAGIC:
         raise ProtocolError("not a stems request")
@@ -75,9 +76,27 @@ def read_request(sock, max_file=MAX_FILE):
     token = text_in(sock)
     name = text_in(sock)
     (size,) = struct.unpack(">I", exact(sock, 4))
-    if size > max_file:
-        raise ProtocolError("a file of %d bytes" % size)
-    return Request(version, count, token, name, exact(sock, size))
+    request = Request(version, count, token, name, b"")
+    request.size = size
+    return request
+
+
+def skip(sock, n):
+    """Reads n bytes and keeps none of them: the file of a refused request, so that the unit hears the answer."""
+    while n:
+        part = sock.recv(min(n, 1 << 16))
+        if not part:
+            raise ConnectionError("the other side hung up")
+        n -= len(part)
+
+
+def read_request(sock, max_file=MAX_FILE):
+    """The unit's request. ProtocolError if it is not one."""
+    request = read_head(sock)
+    if request.size > max_file:
+        raise ProtocolError("a file of %d bytes" % request.size)
+    request.data = exact(sock, request.size)
+    return request
 
 
 def progress(message):

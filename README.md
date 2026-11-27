@@ -32,10 +32,11 @@ you have the right to use.
    processor even with a GPU. Run it again to update.
 3. Let the unit reach the computer, once, in a PowerShell opened as administrator:
    ```powershell
-   New-NetFirewallRule -DisplayName stemd -Direction Inbound -Protocol TCP -LocalPort 4790 -Action Allow -Profile Private,Public
+   New-NetFirewallRule -DisplayName stemd -Direction Inbound -Protocol TCP -LocalPort 4790 -Action Allow -Profile Private,Public -RemoteAddress LocalSubnet
    ```
    A cable straight to the unit, or a network with no internet, is often an "unidentified network", which Windows
-   counts as public: that is why the rule covers both.
+   counts as public: that is why the rule covers both. `LocalSubnet` lets in only the computers of the networks this
+   one is on, the unit's included.
 
 ## Run it
 
@@ -138,7 +139,10 @@ On Linux, open TCP 4790 in the firewall if it has one.
 ## Security
 
 The token is a shared word, kept in plain text in the unit's settings file and on this computer. It keeps other
-people on a shared network from using your computer's GPU, nothing more. Run the service on networks you trust.
+people on a shared network from using your computer's GPU, nothing more. A request with a wrong token, or a file
+longer than `--max-seconds` allows, is refused before its sample is kept, and at most four samples are taken in at
+once. Run the service on networks you trust, and with `--bind` on the address of the unit's network when the computer
+has others.
 
 ## How it talks to the unit
 

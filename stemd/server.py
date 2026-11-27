@@ -16,6 +16,7 @@ from . import protocol, wav
 KEEPALIVE = 5.0             # seconds between progress records while working
 STEP = 1.0                  # the least time between records that say a new percentage
 READ_TIMEOUT = 30.0         # the longest the unit may pause while it sends its request
+UPLOADS = 4                 # requests whose files are read at once: more are refused before their file is taken
 
 
 LOG_FILE = None             # also written there when set (--log), for a service that runs without a window
@@ -36,6 +37,9 @@ class Service:
     def __init__(self, separator, token, max_seconds=64.0):
         self.separator, self.token, self.max_seconds = separator, token, max_seconds
         self.busy = threading.Lock()
+        self.uploads = threading.BoundedSemaphore(UPLOADS)
+        # the largest file a sample of max_seconds can be: 96 kHz, stereo, 32 bits, and room for the WAV's chunks
+        self.max_bytes = int(max_seconds * 96000 * 2 * 4) + (1 << 20)
 
     def allowed(self, token):
         return self.token is None or hmac.compare_digest(token.encode("utf-8"), self.token.encode("utf-8"))
@@ -45,22 +49,37 @@ class Service:
         began = time.monotonic()
         try:
             sock.settimeout(READ_TIMEOUT)
-            request = protocol.read_request(sock)
+            request = protocol.read_head(sock)
         except (protocol.ProtocolError, ConnectionError, OSError) as e:
             log("%s: not a request (%s)" % (who, e))
             return self.reply(sock, protocol.error("not understood"))
-        if request.version == protocol.VERSION and request.count == 0 and not request.data:
+        if request.version == protocol.VERSION and request.count == 0 and not request.size:
             if not self.allowed(request.token):
                 log("%s: a check, wrong token" % who)
                 return self.reply(sock, protocol.error("wrong token"))
             return self.reply(sock, protocol.DONE)
         label = "%s: %r, %d stems" % (who, request.name[:80], request.count)
+        # Everything is checked before the file is read, and a refused file is read only to be thrown away, so that the
+        # unit hears why. One too large for the service is not read at all.
+        if request.size > self.max_bytes:
+            log("%s: refused, a file of %d bytes" % (label, request.size))
+            return self.reply(sock, protocol.error("over %g seconds" % self.max_seconds))
         if request.version != protocol.VERSION or request.count not in protocol.NAMES:
             log("%s: refused, version %d" % (label, request.version))
-            return self.reply(sock, protocol.error("not understood (version %d)" % request.version))
+            return self.refuse(sock, request, "not understood (version %d)" % request.version)
         if not self.allowed(request.token):
             log("%s: refused, wrong token" % label)
-            return self.reply(sock, protocol.error("wrong token"))
+            return self.refuse(sock, request, "wrong token")
+        if not self.uploads.acquire(blocking=False):
+            log("%s: refused, too many samples are being sent" % label)
+            return self.refuse(sock, request, "busy, try again")
+        try:
+            request.data = protocol.exact(sock, request.size)
+        except (ConnectionError, OSError) as e:
+            log("%s: the unit hung up while it sent its sample (%s)" % (label, e))
+            return
+        finally:
+            self.uploads.release()
         try:
             samples, fmt = wav.read(request.data)
         except wav.WavError as e:
@@ -138,6 +157,15 @@ class Service:
         if failure:
             raise failure[0]
         return result
+
+    @classmethod
+    def refuse(cls, sock, request, why):
+        """Refused once its head is read: its file is read and thrown away, then the unit is told why."""
+        try:
+            protocol.skip(sock, request.size)
+        except (ConnectionError, OSError):
+            return
+        cls.reply(sock, protocol.error(why))
 
     @staticmethod
     def reply(sock, data):
