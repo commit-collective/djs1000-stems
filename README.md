@@ -6,8 +6,8 @@ opens a page whose SPLIT sends the track's sample. The computer separates it wit
 2 stems (vocals, instrumental) or 4 (drums, bass, vocals, other). They land next to the sample, in the same format and
 exactly as long, so a pattern or a loop set on the sample fits them too.
 
-The `stems` mod is a work in progress and not in a release of the mods yet. Separate only samples you have the right
-to use.
+The `stems` mod is in beta from mods v0.6.0, off until it is turned on. Separate only samples
+you have the right to use.
 
 ## What it needs
 
